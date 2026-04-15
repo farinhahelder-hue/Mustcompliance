@@ -316,16 +316,163 @@ class OnboardingStep(Base):
 
 # ============== CHECKLIST TEMPLATES ==============
 
-class ChecklistTemplate(Base):
-    """Checklist template by client type"""
-    __tablename__ = "checklist_templates"
+class Produit(Base):
+    """Product reference (assurance-vie, PER, SCPI, etc.)"""
+    __tablename__ = "produits"
     
     id = Column(Integer, primary_key=True)
-    name = Column(String(255))
-    type_client = Column(String(100))  # CIF, IAS, IOBSP, etc.
-    produits = Column(JSON)  # Applicable products
+    code = Column(String(50), unique=True)
+    nom = Column(String(255))
+    type = Column(String(100))  # Assurance-Vie, PER, SCPI, UC, OPCVM, etc.
+    categorie = Column(String(100))  # Épargne, Retraite, Immobilier
     
-    steps = Column(JSON)  # Template steps
+    # Fees
+    frais_entree = Column(Float)  # %
+    frais_gestion = Column(Float)  # %
+    frais_arbitrage = Column(Float)  # %
+    
+    # Eligibility
+    eligibilite = Column(JSON)  # CIF, IAS, IOBSP
+    montant_min = Column(Float)
+    montant_max = Column(Float)
+    
+    # Documents required
+    docs_requis = Column(JSON)  # Required docs
+    
+    actif = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Dossier(Base):
+    """Client file/dossier"""
+    __tablename__ = "dossiers"
+    
+    id = Column(Integer, primary_key=True)
+    cabinet_id = Column(Integer, ForeignKey("cabinets.id"))
+    client_id = Column(Integer, ForeignKey("clients.id"))
+    
+    # Dossier info
+    numero = Column(String(50), unique=True)
+    titre = Column(String(255))
+    
+    # Status
+    statut = Column(String(50), default="creation")  # creation, decouverte, kyc, conseil, signature, envoi, archive
+    etape = Column(String(50))  # Current step
+    
+    # Dates
+    date_creation = Column(DateTime, default=datetime.utcnow)
+    date_derniere_maj = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    date_signature = Column(DateTime)
+    date_cloture = Column(DateTime)
+    
+    # Completion
+    taux_completude = Column(Integer, default=0)
+    
+    # GDPR & Compliance
+    rgpd_consent = Column(Boolean, default=False)
+    date_consentement = Column(DateTime)
+    preferences_esg = Column(JSON)
+    
+    # Notes
+    notes_internes = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Client(Base):
+    """End client (different from Cabinet)"""
+    __tablename__ = "clients"
+    
+    id = Column(Integer, primary_key=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers.id"))
+    
+    # Identity
+    nom = Column(String(255))
+    prenom = Column(String(255))
+    email = Column(String(255))
+    telephone = Column(String(50))
+    
+    # Personal info
+    date_naissance = Column(DateTime)
+    lieu_naissance = Column(String(255))
+    nationalite = Column(String(100))
+    
+    # Address
+    adresse = Column(Text)
+    code_postal = Column(String(20))
+    ville = Column(String(255))
+    
+    # Financial
+    situation_familiale = Column(String(50))
+    montant_epargne = Column(Float)
+    horizon_temporel = Column(String(50))
+    
+    # Beneficiaries
+    beneficiaires = Column(JSON)
+    
+    # ESG
+    preferences_esg = Column(JSON)
+    profil_esg = Column(String(50))  # konservativ, equilibré, dynamique
+    
+    # Status
+    statut = Column(String(50), default="prospect")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Echeance(Base):
+    """Deadline/Reminder"""
+    __tablename__ = "echeances"
+    
+    id = Column(Integer, primary_key=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers.id"))
+    cabinet_id = Column(Integer, ForeignKey("cabinets.id"))
+    
+    # Echeance
+    type = Column(String(100))  # revue_annuelle, renewal, relances, compliance
+    titre = Column(String(255))
+    description = Column(Text)
+    
+    date_echeance = Column(DateTime)
+    frequence = Column(String(50))  # annuelle, mensuelle, trimestrielle
+    
+    # Status
+    realisee = Column(Boolean, default=False)
+    date_realisee = Column(DateTime)
+    
+    # Reminder
+    rappel_avant_jours = Column(Integer, default=7)
+    
+    cree_par = Column(String(100))
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ActionHistorique(Base):
+    """Action history for full traceability"""
+    __tablename__ = "actions_historique"
+    
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String(50))  # dossier, client, document, task
+    entity_id = Column(Integer)
+    
+    # Action
+    type = Column(String(100))  # created, updated, sent, signed, etc.
+    action = Column(String(255))
+    description = Column(Text)
+    
+    # Who
+    utilisateur = Column(String(100))
+    ip_address = Column(String(50))
+    
+    # Data
+    data_before = Column(JSON)
+    data_after = Column(JSON)
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
