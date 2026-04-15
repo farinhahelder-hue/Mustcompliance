@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Depends, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .database import (
@@ -122,10 +123,12 @@ def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 
-# Scan EvalAndGo
-@app.get("/api/scan-evalandgo", response_model=ScanResponse)
-def scan_evalandgo(questionnaire_id: int = 303354):
-    """Scrape all respondents from EvalAndGo"""
+# ============== API Routes ==============
+
+# Scan EvalAndGo - Forms
+@app.get("/api/scan-forms", response_model=ScanResponse)
+def scan_forms(questionnaire_id: int = 303354):
+    """Scrape form responses from EvalAndGo questionnaire"""
     client = create_client()
     
     # Get respondents
@@ -145,7 +148,6 @@ def scan_evalandgo(questionnaire_id: int = 303354):
         ).first()
         
         if existing:
-            # Update
             existing.email = email
             existing.data_raw = respondent
             existing.updated_at = datetime.utcnow()
@@ -173,6 +175,165 @@ def scan_evalandgo(questionnaire_id: int = 303354):
         created=created_count,
         updated=updated_count
     )
+
+
+# Scan EvalAndGo - Documents
+@app.get("/api/scan-documents", response_model=ScanResponse)
+def scan_documents(questionnaire_id: int = 349199):
+    """Scrape document uploads from EvalAndGo questionnaire"""
+    client = create_client()
+    
+    # Get respondents
+    respondents = client.list_respondents(questionnaire_id)
+    
+    db = SessionLocal()
+    created_count = 0
+    updated_count = 0
+    
+    for respondent in respondents:
+        rid = respondent.get("id")
+        
+        # Get full respondent data with responses
+        full_respondent = client.get_respondent(respondent.get("id"))
+        
+        if not full_respondent:
+            continue
+        
+        # Find cabinet
+        cabinet = db.query(Cabinet).filter(
+            Cabinet.respondent_id == rid
+        ).first()
+        
+        if not cabinet:
+            # Create cabinet if not exists
+            cabinet = Cabinet(
+                nom=f"Cabinet {rid}",
+                identifiant=f"CAB{rid}",
+                respondent_id=rid,
+                questionnaire_id=questionnaire_id,
+                data_raw=full_respondent,
+                statut="nouveau"
+            )
+            db.add(cabinet)
+            db.flush()
+            created_count += 1
+        
+        # Process responses looking for uploads
+        for resp_ref in full_respondent.get("responses", []):
+            resp_id = resp_ref.get("@id", "").split("/")[-1]
+            resp_type = resp_ref.get("@type", "")
+            
+            # Check for upload response
+            if "upload" in resp_type.lower():
+                # Get upload details
+                upload_data = client.get(f"/responses/{resp_id}")
+                
+                if upload_data:
+                    filename = upload_data.get("text", f"document_{resp_id}")
+                    question_ref = resp_ref.get("question", "")
+                    question_id = question_ref.split("/")[-1] if question_ref else None
+                    
+                    # Check if document already exists
+                    existing = db.query(Document).filter(
+                        Document.cabinet_id == cabinet.id,
+                        Document.response_id == resp_id
+                    ).first()
+                    
+                    if not existing:
+                        doc = Document(
+                            cabinet_id=cabinet.id,
+                            type="upload",
+                            response_id=resp_id,
+                            filename=filename,
+                            source="evalandgo"
+                        )
+                        db.add(doc)
+                        updated_count += 1
+        
+        db.commit()
+    
+    db.close()
+    
+    return ScanResponse(
+        scanned=len(respondents),
+        created=created_count,
+        updated=updated_count
+    )
+
+
+# Download document from EvalAndGo
+@app.get("/api/document/{doc_id}/download")
+def download_document(doc_id: int):
+    """Download document from EvalAndGo"""
+    db = SessionLocal()
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    
+    if not doc.response_id:
+        raise HTTPException(400, "No response ID for this document")
+    
+    client = create_client()
+    content = client.download_upload(doc.response_id)
+    
+    db.close()
+    
+    if content:
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={doc.filename}"}
+        )
+    
+    raise HTTPException(404, "Could not download document")
+
+
+# Download all documents for a cabinet
+@app.get("/api/cabinet/{cabinet_id}/downloads")
+def download_cabinet_documents(cabinet_id: int):
+    """Download all documents for a cabinet as ZIP"""
+    db = SessionLocal()
+    cabinet = db.query(Cabinet).filter(Cabinet.id == cabinet_id).first()
+    
+    if not cabinet:
+        raise HTTPException(404, "Cabinet not found")
+    
+    docs = db.query(Document).filter(Document.cabinet_id == cabinet_id).all()
+    
+    if not docs:
+        raise HTTPException(404, "No documents for this cabinet")
+    
+    # Download all documents
+    import io
+    import zipfile
+    
+    client = create_client()
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            if doc.response_id:
+                content = client.download_upload(doc.response_id)
+                if content:
+                    zf.writestr(doc.filename or f"doc_{doc.id}", content)
+    
+    zip_buffer.seek(0)
+    
+    db.close()
+    
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={cabinet.nom}_documents.zip"}
+    )
+
+
+# Legacy scan endpoint
+@app.get("/api/scan-evalandgo", response_model=ScanResponse)
+def scan_evalandgo(questionnaire_id: int = 303354):
+    """Scrape all respondents from EvalAndGo (legacy)"""
+    return scan_forms(questionnaire_id)
 
 
 # List cabinets

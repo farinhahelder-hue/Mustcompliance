@@ -112,6 +112,7 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     source = Column(String(50))  # evalandgo, upload, generated
+    response_id = Column(Integer)  # EvalAndGo response ID for downloads
     
     # Relationships
     cabinet = relationship("Cabinet", back_populates="documents")
