@@ -179,6 +179,11 @@ SessionLocal = sessionmaker(bind=engine)
 
 def init_db():
     """Initialize database tables"""
+    # Import all models to register them with Base
+    try:
+        from .onboarding import OnboardingStep, OnboardingPhase
+    except ImportError:
+        pass
     Base.metadata.create_all(engine)
 
 

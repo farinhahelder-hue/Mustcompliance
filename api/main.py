@@ -17,6 +17,12 @@ from .database import (
     SessionLocal, get_db
 )
 from .evalandgo import create_client, DEFAULT_JWT
+from .onboarding import (
+    create_onboarding_for_cabinet,
+    get_onboarding_status,
+    update_step_status,
+    ONBOARDING_TEMPLATE
+)
 
 
 # Initialize
@@ -569,6 +575,111 @@ def export_excel():
     
     db.close()
     return rows
+
+
+# ============== Onboarding Endpoints ==============
+
+@app.post("/api/onboarding/{cabinet_id}/create")
+def create_onboarding(cabinet_id: int):
+    """Create onboarding workflow for cabinet"""
+    db = SessionLocal()
+    cabinet = db.query(Cabinet).filter(Cabinet.id == cabinet_id).first()
+    if not cabinet:
+        db.close()
+        raise HTTPException(404, "Cabinet not found")
+    db.close()
+    
+    result = create_onboarding_for_cabinet(cabinet_id)
+    return result
+
+
+@app.get("/api/onboarding/{cabinet_id}")
+def get_onboarding(cabinet_id: int):
+    """Get onboarding status for cabinet"""
+    return get_onboarding_status(cabinet_id)
+
+
+@app.patch("/api/onboarding/{cabinet_id}/step/{step_key}")
+def update_step(cabinet_id: int, step_key: str, status: str, progress: int = None, notes: str = None):
+    """Update step status"""
+    return update_step_status(cabinet_id, step_key, status, progress, notes)
+
+
+@app.get("/api/onboarding/templates")
+def get_templates():
+    """Get onboarding templates"""
+    return ONBOARDING_TEMPLATE
+
+
+# ============== Compliance Check ==============
+
+@app.get("/api/compliance/{cabinet_id}")
+def check_compliance(cabinet_id: int):
+    """Check if all required documents are ready"""
+    db = SessionLocal()
+    cabinet = db.query(Cabinet).filter(Cabinet.id == cabinet_id).first()
+    
+    if not cabinet:
+        raise HTTPException(404, "Cabinet not found")
+    
+    # Check documents
+    missing = check_missing_documents(cabinet)
+    
+    # Get onboarding
+    onboarding = get_onboarding_status(cabinet_id)
+    
+    # Get documents
+    docs = db.query(Document).filter(Document.cabinet_id == cabinet_id).all()
+    
+    db.close()
+    
+    return {
+        "cabinet_id": cabinet_id,
+        "nom": cabinet.nom,
+        "documents": {
+            "completude": missing["completude"],
+            "missing": missing["missing"],
+            "present": missing["present"],
+            "total_required": len(REQUIRED_DOCS)
+        },
+        "onboarding": {
+            "progress": onboarding["total_progress"],
+            "phases": onboarding["phases"]
+        },
+        "documents_uploaded": len(docs),
+        "is_ready": missing["completude"] >= 100 and onboarding["total_progress"] >= 100
+    }
+
+
+@app.get("/api/compliance")
+def check_all_compliance():
+    """Check compliance for all cabinets"""
+    db = SessionLocal()
+    cabinets = db.query(Cabinet).all()
+    
+    results = []
+    for cabinet in cabinets:
+        missing = check_missing_documents(cabinet)
+        onboarding = get_onboarding_status(cabinet.id)
+        
+        results.append({
+            "cabinet_id": cabinet.id,
+            "nom": cabinet.nom,
+            "email": cabinet.email,
+            "documents_progress": missing["completude"],
+            "onboarding_progress": onboarding["total_progress"],
+            "is_ready": missing["completude"] >= 100 and onboarding["total_progress"] >= 100
+        })
+    
+    db.close()
+    
+    ready = sum(1 for r in results if r["is_ready"])
+    return {
+        "total": len(results),
+        "ready": ready,
+        "in_progress": len(results) - ready,
+        "cabinets": results
+    }
 
 
 def handler(request, context):
