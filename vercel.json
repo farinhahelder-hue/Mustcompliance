@@ -1,0 +1,28 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "builds": [
+    {
+      "src": "api/**/*.py",
+      "use": "@vercel/python",
+      "config": { "runtime": "python3.12" }
+    },
+    {
+      "src": "frontend/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/$1"
+    }
+  ],
+  "env": {
+    "EVALANDGO_JWT": "@evalandgo-jwt",
+    "DATABASE_URL": "@database-url"
+  }
+}

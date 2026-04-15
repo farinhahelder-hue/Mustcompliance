@@ -1,0 +1,15 @@
+{
+  "name": "mustcompliance-cgp-scraper",
+  "version": "1.0.0",
+  "description": "CGP Cabinet Compliance Dashboard - EvalAndGo scraper",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "pip install -r requirements.txt && cd frontend && npm ci && npm run build",
+    "start": "vercel start",
+    "vercel-build": "pip install -r requirements.txt && cd frontend && npm ci && npm run build"
+  },
+  "dependencies": {
+    "vercel-python": "^0.2.0"
+  }
+}
