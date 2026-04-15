@@ -15,7 +15,7 @@ class EvalAndGoClient:
     BASE_URL = "https://app.evalandgo.com/api/v3"
     
     def __init__(self, jwt_token: str = None):
-        self.jwt_token = jwt_token or os.getenv("EVALANDGO_JWT")
+        self.jwt_token = jwt_token or os.getenv("EVALANDGO_JWT") or DEFAULT_JWT
         if not self.jwt_token:
             raise ValueError("JWT token required")
         
